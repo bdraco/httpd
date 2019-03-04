@@ -840,7 +840,7 @@ static int status_handler(request_rec *r)
                                               ws_record->client64),
                                ap_escape_html(r->pool,
                                               ap_escape_logitem(r->pool,
-                                                                ws_record->request)),
+                                                                suppress_url_data(ws_record->request))),
                                ap_escape_html(r->pool,
                                               ws_record->protocol),
                                ap_escape_html(r->pool,
@@ -931,7 +931,7 @@ static int status_handler(request_rec *r)
                                               ws_record->vhost),
                                ap_escape_html(r->pool,
                                               ap_escape_logitem(r->pool,
-                                                      ws_record->request)));
+                                                      suppress_url_data(ws_record->request))));
                 } /* no_table_report */
             } /* for (j...) */
         } /* for (i...) */
@@ -1038,6 +1038,29 @@ static void register_hooks(apr_pool_t *p)
     ap_hook_child_init(status_child_init, NULL, NULL, APR_HOOK_MIDDLE);
 #endif
 }
+
+char * suppress_url_data(const char *str)
+{
+  const unsigned char *s;
+
+  if (!str) {
+    return NULL;
+  }
+
+  // Suppress everything after / unless its a ~
+  // http://site.tld/~user/..... SUPPRESSED ....
+  // http://site.tld/..... SUPPRESSED ....
+  s = (const unsigned char *)str;
+  for (; *s; ++s) {
+    if (*s == '/' && str[s+1] != '~') {
+      *s = '\0';
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 
 AP_DECLARE_MODULE(status) =
 {

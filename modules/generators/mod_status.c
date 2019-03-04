@@ -86,6 +86,10 @@
 
 module AP_MODULE_DECLARE_DATA status_module;
 
+typedef struct {
+    int show_status_full_request;
+} statusconfig;  
+
 static int server_limit, thread_limit, threads_per_child, max_servers,
            is_async;
 
@@ -102,6 +106,34 @@ APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(ap, STATUS, int, status_hook,
  */
 static pid_t child_pid;
 #endif
+
+/*
+ * Create a configuration specific to this module for a server or directory
+ * location, and fill it with the default settings.
+ *
+ * The API says that in the absence of a merge function, the record for the
+ * closest ancestor is used exclusively.  That's what we want, so we don't
+ * bother to have such a function.
+ */
+
+static void *mkconfig(apr_pool_t *p) 
+{
+    statusconfig *cfg = apr_pcalloc(p, sizeof(statusconfig));
+
+    cfg->show_status_full_request = 0;
+    return cfg;
+}
+
+/*
+ * Respond to a callback to create configuration record for a server or
+ * vhost environment.
+ */
+static void *create_mconfig_for_server(apr_pool_t *p, server_rec *s) 
+{
+    return mkconfig(p);
+}
+
+
 
 /* Format the number of bytes nicely */
 static void format_byte_out(request_rec *r, apr_off_t bytes)
@@ -182,6 +214,7 @@ static char status_flags[MOD_STATUS_NUM_STATUS];
 static int status_handler(request_rec *r)
 {
     const char *loc;
+    statusconfig *cfg;
     apr_time_t nowtime;
     apr_uint32_t up_time;
     ap_loadavg_t t;
@@ -840,7 +873,7 @@ static int status_handler(request_rec *r)
                                               ws_record->client64),
                                ap_escape_html(r->pool,
                                               ap_escape_logitem(r->pool,
-                                                                suppress_url_data(ws_record->request))),
+                                                                cfg->show_status_full_request  ? ws_record->request : suppress_url_data(ws_record->request)   )),
                                ap_escape_html(r->pool,
                                               ws_record->protocol),
                                ap_escape_html(r->pool,
@@ -931,7 +964,7 @@ static int status_handler(request_rec *r)
                                               ws_record->vhost),
                                ap_escape_html(r->pool,
                                               ap_escape_logitem(r->pool,
-                                                      suppress_url_data(ws_record->request))));
+                                                      cfg->show_status_full_request  ? ws_record->request : suppress_url_data(ws_record->request)    )));
                 } /* no_table_report */
             } /* for (j...) */
         } /* for (i...) */
@@ -1061,14 +1094,27 @@ char * suppress_url_data(const char *str)
   return 0;
 }
 
+/*
+ * Define the directives specific to this module.  This structure is referenced
+ * later by the 'module' structure.
+ */
+static const command_rec speling_cmds[] =
+{
+    AP_INIT_FLAG("ShowStatusFullRequest", ap_set_flag_slot,
+                  (void*)APR_OFFSETOF(statusconfig, show_status_full_request), OR_OPTIONS,
+                 "whether or not to show the full uri in the status"),
+    { NULL }
+};
+
+
 
 AP_DECLARE_MODULE(status) =
 {
     STANDARD20_MODULE_STUFF,
     NULL,                       /* dir config creater */
     NULL,                       /* dir merger --- default is to override */
-    NULL,                       /* server config */
+    create_mconfig_for_server,                       /* server config */
     NULL,                       /* merge server config */
-    NULL,                       /* command table */
+    status_cmds,                       /* command table */
     register_hooks              /* register_hooks */
 };
